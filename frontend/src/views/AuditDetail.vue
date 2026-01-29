@@ -1,40 +1,84 @@
 <template>
-  <div class="card" v-if="audit">
-    <div class="row">
-      <div class="col">
-        <div><b>{{ audit.factory.factoryCode }}</b> {{ audit.factory.factoryName }}</div>
-        <div style="color:#666;font-size:13px">{{ audit.year }} / {{ audit.auditType===1?'年度评鉴':'新引入' }}</div>
+  <div v-if="err" class="alert alert-danger">{{ err }}</div>
+  <div v-else>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+      <div>
+        <h5 class="mb-0">评鉴单：{{ audit?.year }} - {{ audit?.factoryName }}</h5>
+        <div class="text-muted small">类型：{{ audit?.auditType===2 ? '复评' : '年度' }} · 状态：{{ audit?.status || audit?.auditStatus }}</div>
       </div>
-      <div class="col" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span class="badge">{{ audit.statusText }}</span>
-        <span class="badge">等级：{{ audit.finalGrade || '-' }}</span>
-        <span class="badge" v-if="audit.copiedFromAuditId">已复制去年数据</span>
-      </div>
-      <div class="col" style="display:flex;align-items:center;justify-content:end;gap:10px;flex-wrap:wrap">
-        <button class="secondary" @click="refresh">刷新</button>
-        <button @click="rate" :disabled="!canRate">判级并生成整改项</button>
-        <router-link :to="'/audits/'+audit.auditId+'/capa'">整改项</router-link>
-        <router-link :to="'/audits/'+audit.auditId+'/reaudits'">复评</router-link>
-        <button class="secondary" v-if="isAdmin && audit.status!==2" @click="reopen">管理员重开</button>
+      <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" :href="`#/audits/${auditId}/capa`">整改项</a>
+        <button class="btn btn-outline-primary" :disabled="busyRate" @click="rateAudit">自动判级</button>
+        <a class="btn btn-outline-success" :href="exportDetailUrl" target="_blank">导出明细Excel</a>
+        <a class="btn btn-outline-danger" :href="exportNgUrl" target="_blank">导出不合格汇总</a>
       </div>
     </div>
-    <div v-if="msg" class="bad" style="margin-top:10px">{{ msg }}</div>
-  </div>
 
-  <div class="card">
-    <h3 style="margin:0 0 10px 0">模块进度</h3>
-    <div v-if="!modules.length" style="color:#666">暂无模块</div>
-    <div v-for="m in modules" :key="m.moduleId" class="card" style="background:#fbfbfe">
-      <div class="row">
-        <div class="col">
-          <div><b>{{ m.moduleName }}</b></div>
-          <div style="color:#666;font-size:13px">完成：{{ m.filled }}/{{ m.total }}；提交：{{ m.moduleStatus===2?'是':'否' }}</div>
+    <div class="card card-soft shadow-sm">
+      <div class="card-body">
+        <div class="row g-2">
+          <div class="col-6 col-md-3">
+            <div class="text-muted small">完成进度</div>
+            <div class="fw-semibold">{{ progress.done }}/{{ progress.total }}</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="text-muted small">判级</div>
+            <div class="fw-semibold">{{ audit?.grade || '-' }}</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="text-muted small">不合格/部分不符合</div>
+            <div class="fw-semibold">{{ audit?.ngCount ?? '-' }}</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="text-muted small">复评建议</div>
+            <div class="fw-semibold">{{ audit?.needReaudit ? '需要' : '—' }}</div>
+          </div>
         </div>
-        <div class="col" style="display:flex;align-items:center;justify-content:end;gap:10px;flex-wrap:wrap">
-          <router-link :to="'/audits/'+auditId+'/modules/'+m.moduleId">录入</router-link>
-          <button class="secondary" v-if="m.moduleStatus!==2" @click="submit(m)">提交</button>
-          <button class="secondary" v-else @click="withdraw(m)">撤回</button>
+        <div class="text-danger mt-2" v-if="rateErr">{{ rateErr }}</div>
+      </div>
+    </div>
+
+    <div class="card card-soft shadow-sm mt-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+          <h6 class="mb-0">模块清单</h6>
+          <button class="btn btn-sm btn-outline-secondary" :disabled="busy" @click="loadAll">刷新</button>
         </div>
+
+        <div class="table-responsive mt-3">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>模块</th>
+                <th>条款</th>
+                <th>完成</th>
+                <th>状态</th>
+                <th style="width:210px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="m in modules" :key="m.moduleId || m.id">
+                <td>{{ m.moduleName || m.name }}</td>
+                <td>{{ m.totalClauses || m.total }}</td>
+                <td>{{ m.doneClauses || m.done }}/{{ m.totalClauses || m.total }}</td>
+                <td>
+                  <span class="badge bg-secondary">{{ m.status || m.moduleStatus }}</span>
+                  <span class="text-muted small ms-2" v-if="m.lockedBy">锁定：{{ m.lockedBy }}</span>
+                </td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-outline-primary" :href="`#/audits/${auditId}/modules/${m.moduleId || m.id}`">录入</a>
+                  <button class="btn btn-sm btn-outline-secondary ms-2" @click="toggleModule(m)" :disabled="busyAction">
+                    {{ (m.status||m.moduleStatus)==='submitted' ? '撤回' : '提交' }}
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="modules.length===0 && !busy">
+                <td colspan="5" class="text-muted text-center">暂无模块</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="text-danger" v-if="actionErr">{{ actionErr }}</div>
       </div>
     </div>
   </div>
@@ -42,72 +86,81 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { http } from '../api/http'
 import { useRoute } from 'vue-router'
+import { AuditsApi } from '../api/endpoints'
+import { apiErrorMessage } from '../api/http'
 
 const route = useRoute()
 const auditId = route.params.auditId
 
 const audit = ref(null)
 const modules = ref([])
-const msg = ref('')
+const err = ref('')
+const busy = ref(false)
 
-const isAdmin = computed(() => Number(localStorage.getItem('role') || 0) === 1)
+const busyRate = ref(false)
+const rateErr = ref('')
 
-const canRate = computed(() => {
-  if (!audit.value) return false
-  if (audit.value.status !== 2) return false
-  return modules.value.length > 0 && modules.value.every(m => m.moduleStatus === 2)
+const busyAction = ref(false)
+const actionErr = ref('')
+
+const progress = computed(() => {
+  let total = 0
+  let done = 0
+  for (const m of modules.value) {
+    total += (m.totalClauses || m.total || 0)
+    done += (m.doneClauses || m.done || 0)
+  }
+  return { total, done }
 })
 
-async function refresh() {
-  msg.value = ''
-  const r = await http.get('/api/audits/' + auditId)
-  audit.value = r.data.audit
-  modules.value = r.data.modules
-}
+const exportDetailUrl = computed(() => AuditsApi.exportDetailExcel(auditId))
+const exportNgUrl = computed(() => AuditsApi.exportNgSummaryExcel(auditId))
 
-async function submit(m) {
-  msg.value = ''
+async function loadAll() {
+  err.value = ''
+  busy.value = true
   try {
-    await http.post(`/api/audits/${auditId}/modules/${m.moduleId}/submit`)
-    await refresh()
+    audit.value = await AuditsApi.get(auditId)
+    const data = await AuditsApi.modules(auditId)
+    modules.value = Array.isArray(data) ? data : (data.items || [])
   } catch (e) {
-    msg.value = e?.response?.data?.message || '提交失败（请确认该模块条款已全部填写）'
+    err.value = apiErrorMessage(e)
+  } finally {
+    busy.value = false
   }
 }
 
-async function withdraw(m) {
-  msg.value = ''
+async function rateAudit() {
+  rateErr.value = ''
+  busyRate.value = true
   try {
-    await http.post(`/api/audits/${auditId}/modules/${m.moduleId}/withdraw`)
-    await refresh()
+    const res = await AuditsApi.rate(auditId)
+    // reload summary
+    await loadAll()
+    return res
   } catch (e) {
-    msg.value = e?.response?.data?.message || '撤回失败'
+    rateErr.value = apiErrorMessage(e)
+  } finally {
+    busyRate.value = false
   }
 }
 
-async function rate() {
-  msg.value = ''
+async function toggleModule(m) {
+  actionErr.value = ''
+  busyAction.value = true
   try {
-    const r = await http.post(`/api/audits/${auditId}/rate`)
-    msg.value = `判级完成：${r.data.finalGrade}；${r.data.hasCapa ? '已生成整改项' : '无整改项'}`
-    await refresh()
+    const st = m.status || m.moduleStatus
+    const moduleId = m.moduleId || m.id
+    if (st === 'submitted') await AuditsApi.withdrawModule(auditId, moduleId)
+    else await AuditsApi.submitModule(auditId, moduleId)
+    await loadAll()
   } catch (e) {
-    msg.value = e?.response?.data?.message || '判级失败（检查是否所有模块都已提交/条款已填写）'
+    actionErr.value = apiErrorMessage(e)
+  } finally {
+    busyAction.value = false
   }
 }
 
-async function reopen() {
-  msg.value = ''
-  try {
-    await http.post(`/api/audits/${auditId}/reopen`)
-    msg.value = '已重开（等级与整改项已清空，模块回到“编辑中”）'
-    await refresh()
-  } catch (e) {
-    msg.value = e?.response?.data?.message || '重开失败'
-  }
-}
-
-onMounted(refresh)
+onMounted(loadAll)
 </script>

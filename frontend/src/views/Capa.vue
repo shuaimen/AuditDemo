@@ -1,75 +1,84 @@
 <template>
-  <div class="card">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-      <div>
-        <router-link :to="'/audits/' + auditId">← 返回评鉴</router-link>
-        <div style="font-size:20px;font-weight:700;margin-top:6px">整改项（CAPA）</div>
-      </div>
-      <div>
-        <button class="secondary" @click="load">刷新</button>
-      </div>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h5 class="mb-0">整改项（CAPA）</h5>
+      <div class="text-muted small">评鉴：{{ auditId }}</div>
     </div>
-
-    <div v-if="err" class="bad" style="margin-top:10px">{{ err }}</div>
+    <a class="btn btn-outline-secondary" :href="`#/audits/${auditId}`">返回评鉴单</a>
   </div>
 
-  <div class="card" v-if="loading">加载中...</div>
+  <div v-if="err" class="alert alert-danger">{{ err }}</div>
 
-  <div class="card" v-else>
-    <div v-if="items.length === 0" style="color:#666">暂无整改项（请先在评鉴详情页执行“判级并生成整改项”）</div>
+  <div class="card card-soft shadow-sm" v-for="c in items" :key="c.capaId || c.id">
+    <div class="card-body">
+      <div class="d-flex justify-content-between gap-2">
+        <div>
+          <div class="fw-semibold">
+            <span class="badge bg-danger me-2">{{ c.level || c.grade || 'NG' }}</span>
+            {{ c.clauseText || c.clauseContent || c.title }}
+          </div>
+          <div class="text-muted small">条款：{{ c.clauseCode }} · 状态：{{ c.status || c.capaStatus }}</div>
+        </div>
+        <div class="text-end">
+          <button class="btn btn-sm btn-outline-secondary" @click="toggle(c)">{{ c._open ? '收起' : '展开' }}</button>
+        </div>
+      </div>
 
-    <div v-for="c in items" :key="c.capaId" class="card" style="background:#fbfbfe">
-      <div class="row">
-        <div class="col" style="min-width:220px">
-          <div><b>条款：</b>{{ c.clauseCode }}</div>
-          <div style="margin-top:6px">
-            <span class="badge">{{ c.statusText }}</span>
-            <span class="badge" style="margin-left:8px">截止：{{ c.dueDate ? formatDate(c.dueDate) : '未填写' }}</span>
+      <div v-if="c._open" class="mt-3">
+        <div class="row g-2">
+          <div class="col-12 col-md-6">
+            <label class="form-label">整改措施</label>
+            <textarea class="form-control" rows="3" v-model="c.correctiveAction" :disabled="false"></textarea>
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label">责任人</label>
+            <input class="form-control" v-model="c.owner" />
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label">截止日期</label>
+            <input class="form-control" type="date" v-model="c.dueDate" />
           </div>
         </div>
-        <div class="col" style="display:flex;align-items:center;justify-content:end;gap:10px">
-          <button class="secondary" @click="save(c)">保存</button>
-          <button class="secondary" v-if="c.status===1" @click="submitEvidence(c)">提交证据</button>
-          <button class="secondary" v-if="c.status===2" @click="close(c)">关闭</button>
-        </div>
-      </div>
 
-      <div class="row" style="margin-top:10px">
-        <div class="col">
-          <label>整改措施</label>
-          <textarea v-model="c.correctiveAction" placeholder="填写整改措施"></textarea>
+        <div class="mt-2">
+          <label class="form-label">证据（最多 5 张图片）</label>
+          <div class="d-flex flex-wrap gap-2">
+            <div v-for="(p,idx) in (c.evidences||[])" :key="idx" class="text-center">
+              <img :src="p.url" class="img-thumb" @click="preview(p.url)" />
+              <div class="small text-muted">#{{ p.sortNo ?? idx+1 }}</div>
+            </div>
+          </div>
+          <div class="d-flex gap-2 mt-2">
+            <input class="form-control" type="file" accept="image/*" capture="environment" :disabled="(c.evidences||[]).length>=5" @change="e => onUploadEvidence(c, e, true)" />
+            <input class="form-control" type="file" accept="image/*" :disabled="(c.evidences||[]).length>=5" @change="e => onUploadEvidence(c, e, false)" />
+          </div>
+          <div class="small text-muted mt-1">单张≤10MB；只允许照片。</div>
         </div>
-        <div class="col">
-          <label>责任人姓名（外部）</label>
-          <input v-model="c.externalOwnerName" placeholder="工厂联系人" />
-        </div>
-        <div class="col">
-          <label>责任人电话（外部）</label>
-          <input v-model="c.externalOwnerPhone" placeholder="电话" />
-        </div>
-        <div class="col">
-          <label>截止日期</label>
-          <input type="date" v-model="c._dueDate" />
-        </div>
-      </div>
 
-      <div class="row" style="margin-top:10px">
-        <div class="col">
-          <label>复核结论（关闭前可填写）</label>
-          <textarea v-model="c.reviewConclusion" placeholder="复核结论"></textarea>
-        </div>
-        <div class="col">
-          <label>证据照片（最多5张，单张≤10MB）</label>
-          <input type="file" accept="image/*" capture="environment" multiple @change="(e)=>uploadEvidence(c,e)" />
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-            <a v-for="p in c.evidence" :key="p.evidenceId" :href="p.url" target="_blank">
-              <img :src="p.url" style="width:86px;height:86px;object-fit:cover;border-radius:8px;border:1px solid #ddd" />
-            </a>
+        <div class="sticky-actions mt-3">
+          <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-primary" :disabled="c._busy" @click="save(c)">保存</button>
+            <button class="btn btn-outline-primary" :disabled="c._busy" @click="submitEvidence(c)">提交证据</button>
+            <button class="btn btn-outline-danger" :disabled="c._busy" @click="close(c)">关闭整改（需复核结论）</button>
+            <span class="text-success align-self-center" v-if="c._ok">已保存</span>
+            <span class="text-danger align-self-center" v-if="c._err">{{ c._err }}</span>
           </div>
         </div>
       </div>
 
-      <div v-if="c._msg" style="margin-top:8px;color:#666">{{ c._msg }}</div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="pv" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header"><h6 class="modal-title">预览</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <img :src="previewUrl" class="img-fluid" v-if="previewUrl" />
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -77,123 +86,79 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { http } from '../api/http'
+import { CapaApi } from '../api/endpoints'
+import { apiErrorMessage } from '../api/http'
 
 const route = useRoute()
 const auditId = route.params.auditId
 
 const items = ref([])
-const loading = ref(false)
 const err = ref('')
+const previewUrl = ref('')
 
-function formatDate(d) {
-  const dt = new Date(d)
-  const y = dt.getFullYear()
-  const m = String(dt.getMonth() + 1).padStart(2, '0')
-  const day = String(dt.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-function toDateInput(d) {
-  if (!d) return ''
-  const dt = new Date(d)
-  const y = dt.getFullYear()
-  const m = String(dt.getMonth() + 1).padStart(2, '0')
-  const day = String(dt.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
+function toggle(c){ c._open = !c._open }
 
 async function load() {
   err.value = ''
-  loading.value = true
   try {
-    const r = await http.get(`/api/capa/by-audit/${auditId}`)
-    items.value = r.data.items.map(x => ({
-      ...x,
-      _dueDate: toDateInput(x.dueDate),
-      _msg: ''
-    }))
+    const data = await CapaApi.listByAudit(auditId)
+    items.value = Array.isArray(data) ? data : (data.items || [])
+    items.value.forEach(x => { x._open = false; x._busy = false; x._err = ''; x._ok = false })
   } catch (e) {
-    err.value = e?.response?.data?.message || '加载失败'
-  } finally {
-    loading.value = false
+    err.value = apiErrorMessage(e)
   }
 }
 
 async function save(c) {
-  c._msg = ''
+  c._busy = true; c._err=''; c._ok=false
   try {
-    const body = {
-      correctiveAction: c.correctiveAction || null,
-      externalOwnerName: c.externalOwnerName || null,
-      externalOwnerPhone: c.externalOwnerPhone || null,
-      dueDate: c._dueDate ? c._dueDate : null,
-      reviewConclusion: c.reviewConclusion || null
-    }
-    await http.put(`/api/capa/${c.capaId}`, body)
-    c._msg = '已保存'
-    setTimeout(() => (c._msg = ''), 1200)
-    await load()
+    await CapaApi.update(c.capaId || c.id, {
+      correctiveAction: c.correctiveAction,
+      owner: c.owner,
+      dueDate: c.dueDate
+    })
+    c._ok = true
   } catch (e) {
-    err.value = e?.response?.data?.message || '保存失败'
+    c._err = apiErrorMessage(e)
+  } finally {
+    c._busy = false
   }
 }
 
-async function uploadEvidence(c, e) {
-  err.value = ''
-  const files = Array.from(e.target.files || [])
-  if (!files.length) return
-  if ((c.evidence?.length || 0) + files.length > 5) {
-    err.value = '每个整改项最多5张证据照片'
-    e.target.value = ''
-    return
-  }
-
-  const fd = new FormData()
-  for (const f of files) {
-    if (f.size > 10 * 1024 * 1024) {
-      err.value = '单张照片不能超过10MB'
-      e.target.value = ''
-      return
-    }
-    fd.append('files', f)
-  }
-
+async function onUploadEvidence(c, ev) {
+  const f = ev.target.files?.[0]
+  ev.target.value = ''
+  if (!f) return
+  if (f.size > 10*1024*1024) { c._err = '单张照片不能超过 10MB'; return }
+  if (!f.type.startsWith('image/')) { c._err = '只允许照片'; return }
+  if ((c.evidences || []).length >= 5) { c._err = '最多 5 张'; return }
+  const sortNo = (c.evidences || []).length + 1
   try {
-    await http.post(`/api/capa/${c.capaId}/evidence`, fd, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    await load()
-  } catch (ex) {
-    err.value = ex?.response?.data?.message || '上传失败'
-  } finally {
-    e.target.value = ''
+    const res = await CapaApi.uploadEvidence(c.capaId || c.id, f, sortNo)
+    c.evidences = Array.isArray(res) ? res : (res?.evidences || [...(c.evidences||[]), { url: res?.url || '', sortNo }])
+  } catch (e) {
+    c._err = apiErrorMessage(e)
   }
 }
 
 async function submitEvidence(c) {
-  err.value = ''
-  try {
-    // 会触发 DB CHECK：要求责任人/电话/截止日期已填写
-    await http.post(`/api/capa/${c.capaId}/submit-evidence`)
-    await load()
-  } catch (e) {
-    err.value = e?.response?.data?.message || '提交失败（请确认已填写责任人/电话/截止日期）'
-  }
+  c._busy=true; c._err=''; c._ok=false
+  try { await CapaApi.submitEvidence(c.capaId || c.id); await load() } catch(e){ c._err=apiErrorMessage(e) } finally { c._busy=false }
 }
 
 async function close(c) {
-  err.value = ''
-  if (!c.reviewConclusion || !c.reviewConclusion.trim()) {
-    err.value = '请填写复核结论后再关闭'
-    return
-  }
-  try {
-    await http.post(`/api/capa/${c.capaId}/close`, { reviewConclusion: c.reviewConclusion })
-    await load()
-  } catch (e) {
-    err.value = e?.response?.data?.message || '关闭失败'
-  }
+  const reviewConclusion = prompt('请输入复核结论（必填）：')
+  if (!reviewConclusion) return
+  c._busy=true; c._err=''; c._ok=false
+  try { await CapaApi.close(c.capaId || c.id, reviewConclusion); await load() } catch(e){ c._err=apiErrorMessage(e) } finally { c._busy=false }
+}
+
+function preview(url){
+  previewUrl.value = url
+  const el = document.getElementById('pv')
+  // eslint-disable-next-line no-undef
+  const modal = new bootstrap.Modal(el)
+  modal.show()
 }
 
 onMounted(load)
