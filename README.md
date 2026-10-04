@@ -1,5 +1,7 @@
 # OEMAuditDemo（代工厂评鉴系统 Demo）
 
+> 状态：业务与技术演示项目，尚未标记为生产版本。代码参考提交：`29182541727311a43eaa0ac3da9423ed132d72b4`。下列功能说明是现有演示说明，本次文档整理没有重新运行应用或完成生产验收。
+
 本 Demo 用于在 **SQL Server 2014 + Windows Server/IIS** 内网环境快速跑通“年度评鉴/复用去年默认值/模块协作录入/自动判级/自动生成整改项(CAPA)/Excel导出”的核心流程。
 
 ## 技术栈
@@ -68,9 +70,8 @@ Vite 已配置输出目录到：
 ---
 
 ## 4. Demo 账号
-登录页支持首次登录自动创建账号：
-- 管理员：`admin / admin123`
-- 评鉴人员：`auditor / auditor123`
+演示登录页支持首次登录自动创建账号，仅用于受控演示。正式化前必须取消自动创建演示账号、移除默认口令，并补充真实身份与权限验收：
+- 演示管理员与评鉴人员的登录信息由环境管理员提供；文档不保存明文口令。
 
 登录后会拿到 Token 并存到 localStorage，请求头使用 `X-Token`。
 
@@ -132,7 +133,7 @@ Vite 已配置输出目录到：
   - `GET /api/reports/overview?year=2026&days=60`
   - `GET /api/reports/factory-history/{factoryId}`
 
-### 证照（正式模块）
+### 证照（已实现的演示模块）
 - 列表/筛选：`GET /api/certificates?factoryId=&q=&days=&includeFiles=true`
 - 详情：`GET /api/certificates/{certId}`
 - 新增：`POST /api/certificates`
@@ -147,8 +148,9 @@ Vite 已配置输出目录到：
 
 ---
 
-## 7. 下一步建议（从 Demo 到正式版本）
+## 7. 正式化前的待办（尚未完成）
 - 权限：按“评鉴创建者可分配模块负责人 + 管理员可重开/重置”完善
 - 模板：完善模板 Excel 导入导出、版本发布后不可编辑的约束
 - 复评：基于整改项/不合格条款生成“复评单”，只复查不合格条款
 - 报表：本 Demo 已提供看板页与接口（overview + factory-history），可再补充图表/筛选维度（模块/工厂类型/区域/责任人等）
+
